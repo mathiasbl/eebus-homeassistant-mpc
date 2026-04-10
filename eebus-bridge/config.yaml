@@ -1,6 +1,6 @@
 name: EEBus MA-MPC Bridge
 description: Bridges EEBus heat pump devices (MA-MPC use case) to Home Assistant via MQTT discovery.
-version: "1.0.0"
+version: "1.1.0"
 slug: eebus_mpc_bridge
 init: false
 homeassistant_api: false
@@ -10,10 +10,6 @@ map:
 
 options:
   eebus_port: 4714
-  MQTT_HOST: ""
-  MQTT_PORT: 1883
-  MQTT_USER: ""
-  MQTT_PWD: ""
   discovery_prefix: homeassistant
   topic_prefix: eebus
 
@@ -27,11 +23,9 @@ schema:
   topic_prefix: str
 
 services:
-  - mqtt:need
+  - 'mqtt:need'
 
 arch:
   - aarch64
   - amd64
   - armv7
-
-image: ghcr.io/local/eebus-ha-addon/{arch}
