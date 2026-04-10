@@ -42,6 +42,7 @@ import (
 	"github.com/enbility/eebus-go/features/client"
 	"github.com/enbility/eebus-go/service"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
+	eglpc "github.com/enbility/eebus-go/usecases/eg/lpc"
 	"github.com/enbility/eebus-go/usecases/ma/mpc"
 	shipapi "github.com/enbility/ship-go/api"
 	"github.com/enbility/ship-go/cert"
@@ -214,6 +215,7 @@ type bridge struct {
 	cfg   *Config
 	svc   *service.Service
 	ucMpc ucapi.MaMPCInterface
+	ucLpc ucapi.EgLPCInterface
 	mqtt  mqtt.Client
 
 	mu                sync.RWMutex
@@ -419,6 +421,40 @@ func (b *bridge) onMpcEvent(ski string, _ spineapi.DeviceRemoteInterface, entity
 	b.publishState(ski)
 }
 
+// ── EG-LPC event handler ───────────────────────────────────────────────────────
+
+func (b *bridge) onLpcEvent(ski string, _ spineapi.DeviceRemoteInterface, entity spineapi.EntityRemoteInterface, event api.EventType) {
+	switch event {
+	case eglpc.UseCaseSupportUpdate:
+		logf("LPC", "use-case support updated  [SKI=%s]", ski)
+
+	case eglpc.DataUpdateLimit:
+		if limit, err := b.ucLpc.ConsumptionLimit(entity); err == nil {
+			logf("LPC", "ConsumptionLimit: active=%v  value=%.2f W  duration=%s  [SKI=%s]",
+				limit.IsActive, limit.Value, limit.Duration, ski)
+		} else {
+			logf("LPC", "DataUpdateLimit (read error: %v)  [SKI=%s]", err, ski)
+		}
+
+	case eglpc.DataUpdateFailsafeConsumptionActivePowerLimit:
+		if v, err := b.ucLpc.FailsafeConsumptionActivePowerLimit(entity); err == nil {
+			logf("LPC", "FailsafeConsumptionActivePowerLimit: %.2f W  [SKI=%s]", v, ski)
+		} else {
+			logf("LPC", "DataUpdateFailsafeConsumptionActivePowerLimit (read error: %v)  [SKI=%s]", err, ski)
+		}
+
+	case eglpc.DataUpdateFailsafeDurationMinimum:
+		if d, err := b.ucLpc.FailsafeDurationMinimum(entity); err == nil {
+			logf("LPC", "FailsafeDurationMinimum: %s  [SKI=%s]", d, ski)
+		} else {
+			logf("LPC", "DataUpdateFailsafeDurationMinimum (read error: %v)  [SKI=%s]", err, ski)
+		}
+
+	default:
+		logf("LPC", "unknown event: %v  [SKI=%s]", event, ski)
+	}
+}
+
 // ── SHIP / pairing callbacks ───────────────────────────────────────────────────
 
 func (b *bridge) RemoteSKIConnected(_ api.ServiceInterface, ski string) {
@@ -567,6 +603,8 @@ func (b *bridge) setupEEBus(certificate tls.Certificate) {
 	localEntity := b.svc.LocalDevice().EntityForType(model.EntityTypeTypeCEM)
 	b.ucMpc = mpc.NewMPC(localEntity, b.onMpcEvent)
 	b.svc.AddUseCase(b.ucMpc)
+	b.ucLpc = eglpc.NewLPC(localEntity, b.onLpcEvent)
+	b.svc.AddUseCase(b.ucLpc)
 }
 
 func main() {
