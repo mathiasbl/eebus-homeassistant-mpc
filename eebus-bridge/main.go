@@ -381,33 +381,38 @@ func (b *bridge) onMpcEvent(ski string, _ spineapi.DeviceRemoteInterface, entity
 	case mpc.DataUpdatePower:
 		if v, err := b.ucMpc.Power(entity); err == nil {
 			s.setPower(v)
-			logf("POWER", "%.2f W  [SKI=%s]", v, ski)
+			logf("MPC", "Power: %.2f W  [SKI=%s]", v, ski)
 		}
 	case mpc.DataUpdatePowerPerPhase:
 		if v, err := b.ucMpc.PowerPerPhase(entity); err == nil {
 			s.mu.Lock()
 			s.powerL = v
 			s.mu.Unlock()
+			logf("MPC", "PowerPerPhase: L1=%.2f W  L2=%.2f W  L3=%.2f W  [SKI=%s]", val(v, 0), val(v, 1), val(v, 2), ski)
 		}
 	case mpc.DataUpdateCurrentsPerPhase:
 		if v, err := b.ucMpc.CurrentPerPhase(entity); err == nil {
 			s.mu.Lock()
 			s.currentL = v
 			s.mu.Unlock()
+			logf("MPC", "CurrentPerPhase: L1=%.2f A  L2=%.2f A  L3=%.2f A  [SKI=%s]", val(v, 0), val(v, 1), val(v, 2), ski)
 		}
 	case mpc.DataUpdateVoltagePerPhase:
 		if v, err := b.ucMpc.VoltagePerPhase(entity); err == nil {
 			s.mu.Lock()
 			s.voltageL = v
 			s.mu.Unlock()
+			logf("MPC", "VoltagePerPhase: L1=%.2f V  L2=%.2f V  L3=%.2f V  [SKI=%s]", val(v, 0), val(v, 1), val(v, 2), ski)
 		}
 	case mpc.DataUpdateFrequency:
 		if v, err := b.ucMpc.Frequency(entity); err == nil {
 			s.mu.Lock()
 			s.freq = &v
 			s.mu.Unlock()
+			logf("MPC", "Frequency: %.2f Hz  [SKI=%s]", v, ski)
 		}
 	default:
+		logf("MPC", "unknown event: %v  [SKI=%s]", event, ski)
 		return
 	}
 
@@ -466,7 +471,7 @@ func (b *bridge) ServiceShipIDUpdate(ski, shipID string) {
 // ServicePairingDetailUpdate logs pairing progress and handles rejection.
 func (b *bridge) ServicePairingDetailUpdate(ski string, detail *shipapi.ConnectionStateDetail) {
 	state := detail.State()
-	logf("PAIR", "SKI=%s  state=%v", ski, state)
+	logf("PAIR", "SKI=%s  state=%s", ski, connectionStateName(state))
 
 	switch state {
 	case shipapi.ConnectionStateRemoteDeniedTrust, shipapi.ConnectionStateError:
@@ -477,6 +482,25 @@ func (b *bridge) ServicePairingDetailUpdate(ski string, detail *shipapi.Connecti
 		delete(b.registeredSKIs, ski)
 		b.mu.Unlock()
 	}
+}
+
+func connectionStateName(s shipapi.ConnectionState) string {
+	names := map[shipapi.ConnectionState]string{
+		shipapi.ConnectionStateNone:                "none",
+		shipapi.ConnectionStateQueued:              "queued",
+		shipapi.ConnectionStateInitiated:           "initiated",
+		shipapi.ConnectionStateReceivedPairingRequest: "pairing-requested",
+		shipapi.ConnectionStateInProgress:          "in-progress",
+		shipapi.ConnectionStateTrusted:             "trusted",
+		shipapi.ConnectionStatePin:                 "pin",
+		shipapi.ConnectionStateCompleted:           "completed",
+		shipapi.ConnectionStateRemoteDeniedTrust:   "remote-denied",
+		shipapi.ConnectionStateError:               "error",
+	}
+	if n, ok := names[s]; ok {
+		return n
+	}
+	return fmt.Sprintf("unknown(%d)", s)
 }
 
 // AllowWaitingForTrust returns true so we wait for the user to approve
@@ -644,4 +668,12 @@ func (b *bridge) Errorf(f string, args ...interface{}) { logf("ERROR", fmt.Sprin
 
 func logf(tag, format string, args ...interface{}) {
 	fmt.Printf("%s [%-7s] %s\n", time.Now().Format("15:04:05.000"), tag, fmt.Sprintf(format, args...))
+}
+
+// val safely indexes a float64 slice, returning 0 if out of bounds.
+func val(s []float64, i int) float64 {
+	if i < len(s) {
+		return s[i]
+	}
+	return 0
 }
